@@ -1,0 +1,35 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: company-service
+  datasource:
+    url: ${COMPANY_DB_URL:jdbc:mysql://localhost:3306/rentflow_company}
+    username: ${COMPANY_DB_USER:rentflow_company}
+    password: ${COMPANY_DB_PASSWORD:change-me}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.type.preferred_uuid_jdbc_type: CHAR
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_DEFAULT_USER:rentflow}
+    password: ${RABBITMQ_DEFAULT_PASS:change-me}
+app:
+  seed:
+    demo-data: ${APP_SEED_DEMO_DATA:false}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+rentflow:
+  jwt:
+    issuer: ${JWT_ISSUER:rentflow}
+    audience: ${JWT_AUDIENCE:rentflow-api}
+    secret: ${JWT_SECRET:local-development-secret-that-must-be-replaced-with-256-bit-value}

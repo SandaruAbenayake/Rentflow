@@ -1,0 +1,138 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rentflow}
+      MYSQL_USER: ${MYSQL_USER:-rentflow}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+    ports:
+      - "3306:3306"
+    volumes:
+      - rentflow_mysql_data:/var/lib/mysql
+      - ./infrastructure/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rentflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rentflow_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/java-service.Dockerfile
+      args: { SERVICE_DIR: backend/api-gateway }
+    environment:
+      JWT_ISSUER: ${JWT_ISSUER:-rentflow}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-rentflow-api}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    ports: ["8080:8080"]
+    depends_on:
+      identity-service: { condition: service_started }
+      company-service: { condition: service_started }
+      fleet-service: { condition: service_started }
+      rental-service: { condition: service_started }
+
+  identity-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/java-service.Dockerfile
+      args: { SERVICE_DIR: backend/identity-service }
+    environment:
+      IDENTITY_DB_URL: jdbc:mysql://mysql:3306/rentflow_identity
+      IDENTITY_DB_USER: root
+      IDENTITY_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rentflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      APP_SEED_DEMO_DATA: "true"
+      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD:?DEMO_SEED_PASSWORD is required}
+    depends_on:
+      mysql: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  company-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/java-service.Dockerfile
+      args: { SERVICE_DIR: backend/company-service }
+    environment:
+      COMPANY_DB_URL: jdbc:mysql://mysql:3306/rentflow_company
+      COMPANY_DB_USER: root
+      COMPANY_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rentflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      APP_SEED_DEMO_DATA: "true"
+      IDENTITY_SERVICE_URL: http://identity-service:8081
+      INTERNAL_PROVISIONING_KEY: ${INTERNAL_PROVISIONING_KEY:?INTERNAL_PROVISIONING_KEY is required}
+    depends_on:
+      mysql: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  fleet-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/java-service.Dockerfile
+      args: { SERVICE_DIR: backend/fleet-service }
+    environment:
+      FLEET_DB_URL: jdbc:mysql://mysql:3306/rentflow_fleet
+      FLEET_DB_USER: root
+      FLEET_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rentflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      APP_SEED_DEMO_DATA: "true"
+    depends_on:
+      mysql: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  rental-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/java-service.Dockerfile
+      args: { SERVICE_DIR: backend/rental-service }
+    environment:
+      RENTAL_DB_URL: jdbc:mysql://mysql:3306/rentflow_rental
+      RENTAL_DB_USER: root
+      RENTAL_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rentflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      APP_SEED_DEMO_DATA: "true"
+    depends_on:
+      mysql: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports: ["5173:80"]
+    depends_on: [api-gateway]
+
+volumes:
+  rentflow_mysql_data:
+  rentflow_rabbitmq_data:
